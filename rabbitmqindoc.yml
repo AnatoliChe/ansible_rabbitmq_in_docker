@@ -1,0 +1,60 @@
+---
+- hosts: docker
+  remote_user: root
+  tasks:
+  - name: install apt-transport-https
+    apt: name=apt-transport-https state=present
+  - name: install dirmngr
+    apt: name=dirmngr state=present
+  - name: add gpg key of repository 7EA0A9C3F273FCD88
+    apt_key:
+        id: "8D81803C0EBFCD88"
+        keyserver: "hkps://sks-keyservers.net:443"
+        state: present
+  - name: add deb repo
+    command: touch /etc/apt/sources.list.d/docker.list
+  - lineinfile: dest="/etc/apt/sources.list.d/docker.list" line="{{item}}"
+    with_items:
+      - "deb https://download.docker.com/linux/debian stretch stable"
+  - name: apt update
+    apt: update_cache=yes
+  - name: ensure docker and dependencies are installed
+    apt: name=docker-ce update_cache=yes
+  - service: name=docker state=restarted
+  - name: Create a login user
+    user:
+      name: docuser
+#      password: '???'
+      groups: docker
+      state: present
+      shell: /bin/bash       # Defaults to /bin/bash
+      system: no             # Defaults to no
+      createhome: yes        # Defaults to yes
+      home: /home/docuser  # Defaults to /home/<username>
+  - name: Clone rabbitmq from git
+    git:
+      repo: https://github.com/AnatoliChe/rabbitmq-docker
+      dest: /home/docuser/rabbitmq-docker
+      version: master
+      accept_hostkey: yes
+    become: yes
+    become_user: docuser
+  - name: install 
+    pip: 
+      name: docker-py
+      state: present
+  - name: Build image rabbitmq and with buildargs
+    docker_image:
+      path: /home/docuser/rabbitmq-docker
+      name: rabbitmq
+      buildargs:
+        listen_port: 5672
+    become: yes
+    become_user: docuser
+  - name: creating service my_project-rabbitmq.service
+    command: creates=/etc/systemd/system/my_project-rabbitmq.service cp /home/docuser/rabbitmq-docker/etc/systemd/system/my_project-rabbitmq.service  /etc/systemd/system/my_project-rabbitmq.service
+  - name: start my_project-rabbitmq.service service
+    systemd:
+      state: started
+      daemon_reload: yes
+      name: my_project-rabbitmq.service
